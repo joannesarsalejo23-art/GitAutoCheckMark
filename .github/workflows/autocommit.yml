@@ -1,0 +1,131 @@
+name: GitAuto - Automated Commit Workflow
+
+on:
+  schedule:
+    # Random execution time once per day (Manila Time / UTC+8)
+    # Using random minute/hour to vary daily execution time
+    # Note: GitHub Actions cron doesn't support true randomness, so we use varied schedules
+    # Each day will run at a different random time from this pool
+    - cron: "17 2 * * *"   # Random: ~10:17 AM PHT
+    - cron: "43 4 * * *"   # Random: ~12:43 PM PHT  
+    - cron: "9 7 * * *"    # Random: ~3:09 PM PHT
+    - cron: "31 9 * * *"   # Random: ~5:31 PM PHT
+    - cron: "57 11 * * *"  # Random: ~7:57 PM PHT
+    - cron: "23 14 * * *"  # Random: ~10:23 PM PHT
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  automated-commit:
+    name: Automated Commit Generation
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "${{ secrets.USERNAME }}"
+          git config --global user.email "${{ secrets.EMAIL }}"
+      
+      - name: Process Automated Commits
+        run: |
+          set -e
+          
+          # Configuration
+          FILES=("README.md")
+          BRANCH="master"
+          LOCK_FILE=".last_commit_date"
+          
+          # Switch to target branch
+          git checkout $BRANCH || git checkout -b $BRANCH
+          
+          # Check if we already ran today (prevent multiple runs per day)
+          TODAY=$(date +%Y-%m-%d)
+          if [ -f "$LOCK_FILE" ]; then
+            LAST_RUN_DATE=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+            if [ "$LAST_RUN_DATE" == "$TODAY" ]; then
+              echo "Already processed commits for today ($TODAY). Skipping..."
+              exit 0
+            fi
+          fi
+          
+          # Generate random commit count between 10-20 per day
+          # Using date + $RANDOM for better randomness based on day
+          RANDOM_SEED=$(date +%s)
+          RANDOM=$RANDOM_SEED
+          COMMIT_LOOP_COUNT=$((10 + RANDOM % 11))  # Random between 10-20
+          
+          echo "Starting automated commit process..."
+          echo "Target files: ${FILES[@]}"
+          echo "Random commit count for today: $COMMIT_LOOP_COUNT"
+          echo "Date: $TODAY"
+          
+          for FILE in "${FILES[@]}"; do
+            if [ ! -f "$FILE" ]; then
+              echo "Warning: File $FILE not found. Skipping..."
+              continue
+            fi
+            
+            echo "Processing file: $FILE"
+            
+            # Generate commits with random delays to appear more natural
+            for ((i=1; i<=COMMIT_LOOP_COUNT; i++)); do
+              echo "--- Commit iteration $i of $COMMIT_LOOP_COUNT ---"
+              
+              # Extract current commit number
+              CURRENT_COUNT=$(grep -oP 'commit number: \K\d+' "$FILE" 2>/dev/null || echo "0")
+              NEXT_COUNT=$((CURRENT_COUNT + 1))
+              
+              echo "Current count: $CURRENT_COUNT → Next count: $NEXT_COUNT"
+              
+              # Update commit counter in file
+              if [[ "$OSTYPE" == "darwin"* ]]; then
+                # macOS
+                sed -i '' "s/commit number: .*/commit number: $NEXT_COUNT/" "$FILE"
+              else
+                # Linux
+                sed -i "s/commit number: .*/commit number: $NEXT_COUNT/" "$FILE"
+              fi
+              
+              # Stage changes
+              git add "$FILE"
+              
+              # Create commit with descriptive message
+              COMMIT_MESSAGE="Auto commit #$NEXT_COUNT : target - ($FILE)"
+              git commit -m "$COMMIT_MESSAGE" || echo "No changes to commit"
+              
+              # Random delay between commits (1-5 seconds) to appear more natural
+              RANDOM_DELAY=$((1 + RANDOM % 5))
+              echo "✓ Commit $i completed. Waiting ${RANDOM_DELAY}s before next commit..."
+              sleep $RANDOM_DELAY
+            done
+            
+            echo "All commits for $FILE processed"
+          done
+          
+          # Mark today as processed
+          echo "$TODAY" > "$LOCK_FILE"
+          git add "$LOCK_FILE" 2>/dev/null || true
+          git commit -m "Update commit date lock" 2>/dev/null || true
+      
+      - name: Synchronize with Remote
+        run: |
+          # Pull latest changes before pushing
+          git pull origin master --rebase || echo "No remote changes to pull"
+          
+          # Push all commits
+          git push origin master
+          
+          echo "✓ All commits successfully pushed to remote repository"
+      
+      - name: Workflow Summary
+        run: |
+          echo "::notice::Automated commit workflow completed successfully"
+          echo "Commits generated and pushed to repository"
