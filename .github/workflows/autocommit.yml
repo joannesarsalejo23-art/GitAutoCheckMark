@@ -79,19 +79,35 @@ jobs:
             for ((i=1; i<=COMMIT_LOOP_COUNT; i++)); do
               echo "--- Commit iteration $i of $COMMIT_LOOP_COUNT ---"
               
-              # Extract current commit number
-              CURRENT_COUNT=$(grep -oP 'commit number: \K\d+' "$FILE" 2>/dev/null || echo "0")
+              # Extract current commit number from README.md
+              # Pattern matches: "commit number: <number>"
+              CURRENT_COUNT=$(grep -oP 'commit number:\s*\K\d+' "$FILE" 2>/dev/null || echo "0")
+              
+              # Verify we found a number, if not try alternative pattern
+              if [ -z "$CURRENT_COUNT" ] || [ "$CURRENT_COUNT" == "0" ]; then
+                CURRENT_COUNT=$(grep -E 'commit number:\s*[0-9]+' "$FILE" | grep -oE '[0-9]+' | head -1 || echo "0")
+              fi
+              
               NEXT_COUNT=$((CURRENT_COUNT + 1))
               
               echo "Current count: $CURRENT_COUNT → Next count: $NEXT_COUNT"
               
-              # Update commit counter in file
+              # Update commit counter in file (targets the exact line format)
+              # Pattern: "commit number: <any number>" -> "commit number: <NEXT_COUNT>"
               if [[ "$OSTYPE" == "darwin"* ]]; then
                 # macOS
-                sed -i '' "s/commit number: .*/commit number: $NEXT_COUNT/" "$FILE"
+                sed -i '' "s/commit number: [0-9]*/commit number: $NEXT_COUNT/" "$FILE"
               else
-                # Linux
-                sed -i "s/commit number: .*/commit number: $NEXT_COUNT/" "$FILE"
+                # Linux (GitHub Actions uses Linux)
+                sed -i "s/commit number: [0-9]*/commit number: $NEXT_COUNT/" "$FILE"
+              fi
+              
+              # Verify the update worked
+              VERIFIED_COUNT=$(grep -oP 'commit number:\s*\K\d+' "$FILE" 2>/dev/null || echo "")
+              if [ "$VERIFIED_COUNT" != "$NEXT_COUNT" ]; then
+                echo "Warning: Commit number update verification failed. Expected: $NEXT_COUNT, Got: $VERIFIED_COUNT"
+              else
+                echo "✓ Commit number updated successfully in $FILE"
               fi
               
               # Stage changes
