@@ -40,7 +40,7 @@ jobs:
           
           # Configuration
           FILES=("README.md")
-          BRANCH="master"
+          BRANCH="main"
           LOCK_FILE=".last_commit_date"
           
           # Switch to target branch
@@ -134,10 +134,10 @@ jobs:
       - name: Synchronize with Remote
         run: |
           # Pull latest changes before pushing
-          git pull origin master --rebase || echo "No remote changes to pull"
+          git pull origin main --rebase || echo "No remote changes to pull"
           
           # Push all commits
-          git push origin master
+          git push origin main
           
           echo "✓ All commits successfully pushed to remote repository"
       
